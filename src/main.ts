@@ -1,6 +1,7 @@
 import { blockedByInsecurePage, CardCamera, cameraSupported, type Facing } from './camera';
-import { type Detection, detectFromLines } from './match';
-import { type Form, loadCatalog, regularOf, shinyOf, type Species } from './pokedex';
+import type { Detection } from './match';
+import { type Form, loadCatalog, regularOf, shinyOf, type Species, squash } from './pokedex';
+import { buildSearchEntries, type SearchEntry, suggest } from './search';
 import { readCard, toCanvas, warmUpOcr } from './recognize';
 import { type AnimationState, PokemonStage } from './stage';
 import { findCard, TYPE_COLORS } from './tcgdex';
@@ -25,7 +26,7 @@ const ui = {
   file: $<HTMLInputElement>('file'),
   search: $<HTMLFormElement>('search'),
   searchInput: $<HTMLInputElement>('search-input'),
-  names: $('pokemon-names'),
+  suggestions: $('search-suggestions'),
   camera: $('camera'),
   cameraVideo: $<HTMLVideoElement>('camera-video'),
   cameraGuide: $('camera-guide'),
@@ -353,41 +354,124 @@ async function runScanLoop(id: number, noticeMs = 0) {
 
 // ---------- Manual search ----------
 
-let searchIndex = new Map<string, { species: Species; form: Form }>();
+let searchEntries: SearchEntry[] | null = null;
+let suggestions: SearchEntry[] = [];
+let highlighted = -1;
 
-function buildSearchIndex(catalog: Species[]) {
-  searchIndex = new Map();
-  const options: HTMLOptionElement[] = [];
-  for (const species of catalog) {
-    for (const form of species.forms) {
-      if (form.shiny) continue;
-      const label = form === species.defaultForm ? species.name : form.name;
-      if (searchIndex.has(label.toLowerCase())) continue;
-      searchIndex.set(label.toLowerCase(), { species, form });
-      options.push(new Option(label));
-    }
-  }
-  ui.names.replaceChildren(...options);
+async function loadSearchEntries(): Promise<SearchEntry[]> {
+  searchEntries ??= buildSearchEntries(await getCatalog());
+  return searchEntries;
 }
 
-async function onSearch(event: SubmitEvent) {
-  event.preventDefault();
-  const query = ui.searchInput.value.trim();
-  if (!query) return;
-  const catalog = await getCatalog();
-  if (searchIndex.size === 0) buildSearchIndex(catalog);
-  const exact = searchIndex.get(query.toLowerCase());
-  const detection = exact ? null : detectFromLines([{ text: query, height: 1 }], catalog);
-  const hit = exact ?? detection;
-  if (!hit) {
-    setStatus(`No Pokémon called "${query}".`, true);
+function suggestionRow(content: string | (string | Node)[], className = ''): HTMLLIElement {
+  const li = document.createElement('li');
+  li.className = className;
+  li.append(...(typeof content === 'string' ? [content] : content));
+  return li;
+}
+
+function closeSuggestions() {
+  suggestions = [];
+  highlighted = -1;
+  ui.suggestions.hidden = true;
+  ui.searchInput.setAttribute('aria-expanded', 'false');
+  ui.searchInput.removeAttribute('aria-activedescendant');
+}
+
+function renderSuggestions() {
+  const text = ui.searchInput.value.trim();
+  if (!text || document.activeElement !== ui.searchInput) return closeSuggestions();
+  ui.suggestions.hidden = false;
+  ui.searchInput.setAttribute('aria-expanded', 'true');
+
+  if (!searchEntries) {
+    // The Pokédex can take a while on first load (the API host sleeps when idle).
+    ui.suggestions.replaceChildren(suggestionRow('Loading the Pokédex…', 'info'));
+    loadSearchEntries()
+      .then(renderSuggestions)
+      .catch(() => ui.suggestions.replaceChildren(suggestionRow("Couldn't load the Pokédex. Check your connection.", 'info')));
     return;
   }
+
+  suggestions = suggest(searchEntries, text);
+  highlighted = Math.min(highlighted, suggestions.length - 1);
+  if (suggestions.length === 0) {
+    ui.suggestions.replaceChildren(suggestionRow('No matching Pokémon', 'info'));
+    return;
+  }
+  ui.suggestions.replaceChildren(
+    ...suggestions.map((entry, i) => {
+      const dex = document.createElement('span');
+      dex.className = 'suggestion-dex';
+      dex.textContent = `#${String(entry.species.id).padStart(4, '0')}`;
+      const li = suggestionRow([entry.label, dex]);
+      li.id = `suggestion-${i}`;
+      li.setAttribute('role', 'option');
+      li.setAttribute('aria-selected', String(i === highlighted));
+      // Keep focus in the input while tapping (so the list doesn't close first).
+      li.addEventListener('mousedown', (e) => e.preventDefault());
+      li.addEventListener('click', () => choose(entry));
+      return li;
+    }),
+  );
+  if (highlighted >= 0) {
+    ui.searchInput.setAttribute('aria-activedescendant', `suggestion-${highlighted}`);
+    document.getElementById(`suggestion-${highlighted}`)?.scrollIntoView({ block: 'nearest' });
+  } else {
+    ui.searchInput.removeAttribute('aria-activedescendant');
+  }
+}
+
+function onSearchKeydown(e: KeyboardEvent) {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (suggestions.length === 0) return;
+    e.preventDefault();
+    const step = e.key === 'ArrowDown' ? 1 : -1;
+    highlighted = (highlighted + step + suggestions.length) % suggestions.length;
+    renderSuggestions();
+  } else if (e.key === 'Escape') {
+    closeSuggestions();
+  }
+}
+
+function choose(entry: SearchEntry) {
   ui.searchInput.value = '';
-  ui.searchInput.blur();
+  closeSuggestions();
+  ui.searchInput.blur(); // Also dismisses the phone keyboard.
   resetCardDetails();
-  enrichFromTcgdex({ species: hit.species, form: hit.form, title: query, context: '', distance: 0, score: 0 });
-  await showForm(hit.species, hit.form);
+  enrichFromTcgdex({ species: entry.species, form: entry.form, title: entry.label, context: '', distance: 0, score: 0 });
+  showForm(entry.species, entry.form);
+}
+
+/** Enter / the keyboard's Search key: the highlighted suggestion, else the best match. */
+async function onSearch(event: SubmitEvent) {
+  event.preventDefault();
+  const text = ui.searchInput.value.trim();
+  if (!text) return;
+  let pick: SearchEntry | undefined = suggestions[highlighted];
+  if (!pick) {
+    const waiting = !searchEntries;
+    if (waiting) {
+      setStatus('Loading the Pokédex…');
+      setProgress(null);
+    }
+    try {
+      const entries = await loadSearchEntries();
+      pick = entries.find((e) => e.key === squash(text)) ?? suggest(entries, text, 1)[0];
+    } catch (err) {
+      console.error(err);
+      setProgress();
+      setStatus("Couldn't reach the Pokémon 3D API. Check your connection and try again.", true);
+      return;
+    } finally {
+      if (waiting) setProgress();
+    }
+  }
+  if (!pick) {
+    setStatus(`No Pokémon called "${text}".`, true);
+    return;
+  }
+  choose(pick);
 }
 
 // ---------- Layout ----------
@@ -429,6 +513,14 @@ async function main() {
   ui.cameraSwitch.addEventListener('click', switchCamera);
   document.addEventListener('keydown', (e) => e.key === 'Escape' && camera.active && closeCamera());
   ui.search.addEventListener('submit', onSearch);
+  ui.searchInput.addEventListener('input', () => {
+    highlighted = -1;
+    renderSuggestions();
+  });
+  ui.searchInput.addEventListener('focus', renderSuggestions);
+  ui.searchInput.addEventListener('keydown', onSearchKeydown);
+  // Delay so a tap on a suggestion registers before the list closes.
+  ui.searchInput.addEventListener('blur', () => setTimeout(closeSuggestions, 200));
   ui.shiny.addEventListener('click', () => {
     if (!current) return;
     const { species, form } = current;
@@ -438,7 +530,7 @@ async function main() {
 
   // Start the slow API wake-up early so it's ready by the first scan.
   loadCatalog()
-    .then(buildSearchIndex)
+    .then((catalog) => (searchEntries = buildSearchEntries(catalog)))
     .catch((err) => console.warn('Catalog preload failed', err));
 }
 

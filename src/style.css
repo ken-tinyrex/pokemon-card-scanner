@@ -317,6 +317,57 @@ body {
   color: var(--accent-ink);
 }
 
+.search {
+  position: relative;
+}
+
+.suggestions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 5;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  max-height: min(320px, 45vh);
+  overflow-y: auto;
+  background: #141c38;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 -8px 30px rgb(0 0 0 / 0.45);
+}
+
+.suggestions li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.suggestions li[aria-selected='true'] {
+  background: rgb(255 255 255 / 0.1);
+}
+
+@media (hover: hover) {
+  .suggestions li:hover {
+    background: rgb(255 255 255 / 0.1);
+  }
+}
+
+.suggestions li.info {
+  color: var(--muted);
+  cursor: default;
+}
+
+.suggestion-dex {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .search input {
   width: 100%;
   min-height: 40px;

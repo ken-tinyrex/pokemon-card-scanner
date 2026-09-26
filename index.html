@@ -47,9 +47,22 @@
             Upload
           </button>
         </div>
-        <form id="search" class="search" autocomplete="off">
-          <input id="search-input" list="pokemon-names" type="search" placeholder="Wrong Pokémon? Type a name" aria-label="Search Pokémon by name" />
-          <datalist id="pokemon-names"></datalist>
+        <form id="search" class="search" role="search" autocomplete="off">
+          <ul id="search-suggestions" class="suggestions" role="listbox" aria-label="Matching Pokémon" hidden></ul>
+          <input
+            id="search-input"
+            type="search"
+            enterkeyhint="search"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls="search-suggestions"
+            aria-expanded="false"
+            placeholder="Wrong Pokémon? Type a name"
+            aria-label="Search Pokémon by name"
+          />
         </form>
         <input id="file" type="file" accept="image/*" hidden />
       </div>
