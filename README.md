@@ -14,6 +14,16 @@ npm run build
 
 Phones, iOS especially, only allow live camera access on HTTPS pages, so `npm run dev` serves HTTPS with a self-signed certificate. Each device shows a warning the first time; accept it to continue (on iOS: **Show Details → visit this website**). If the page is opened over plain HTTP, **Scan** explains that it needs the https:// address; **Upload** still works.
 
+## Deploying
+
+The site is hosted on Firebase Hosting (project `pkmn-card-scanner`): **https://pkmn-card-scanner.web.app**
+
+```sh
+npm run deploy   # builds, then uploads dist/ to Firebase Hosting
+```
+
+This needs the Firebase CLI logged in to an account with access to the project (`firebase login`).
+
 ## How it works
 
 1. **Read the card name.** [Tesseract.js](https://github.com/naptha/tesseract.js) OCRs the title band at the top of the card. Several crop and scale settings run and vote on the result, because no single setting reads every card design. (`src/recognize.ts`)

@@ -225,9 +225,10 @@ async function fetchPtcgSets(): Promise<{ id: string; name: string }[]> {
   } catch {
     // No usable cache.
   }
-  // Their API fails intermittently, so retry once.
+  // Their API fails about half the time (500/502), so retry a few times.
   let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 500 * attempt));
     try {
       const res = await fetch(PTCG_SETS_URL, { signal: AbortSignal.timeout(15_000) });
       if (!res.ok) throw new Error(`pokemontcg.io responded ${res.status}`);
