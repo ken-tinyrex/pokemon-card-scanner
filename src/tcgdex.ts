@@ -14,12 +14,19 @@ interface CardBrief {
 export interface CardInfo {
   id: string;
   name: string;
+  /** Number within its set, as printed. */
+  number: string;
   hp?: number;
   types: string[];
   set?: string;
   rarity?: string;
-  /** Small card image, if TCGdex has one. */
+  /** Card image URL without size, if TCGdex has one; see cardImage(). */
   image?: string;
+}
+
+/** TCGdex serves each card image in two sizes: `low` (~250px wide) and `high` (~600px). */
+export function cardImage(base: string, size: 'low' | 'high'): string {
+  return `${base}/${size}.webp`;
 }
 
 async function getJson<T>(url: string, retries = 1): Promise<T> {
@@ -83,6 +90,7 @@ export async function findCard(detection: Detection): Promise<CardInfo | null> {
 
   const card = await getJson<{
     id: string;
+    localId: string;
     name: string;
     hp?: number;
     types?: string[];
@@ -94,12 +102,74 @@ export async function findCard(detection: Detection): Promise<CardInfo | null> {
   return {
     id: card.id,
     name: card.name,
+    number: card.localId,
     hp: card.hp,
     types: card.types ?? [],
     set: card.set?.name,
     rarity: card.rarity,
-    image: card.image ? `${card.image}/low.webp` : undefined,
+    image: card.image,
   };
+}
+
+export interface CardVariant {
+  id: string;
+  name: string;
+  /** Number within its set, as printed ("4", "SV107", "TG05"). */
+  number: string;
+  image: string;
+  setName?: string;
+}
+
+interface SetBrief {
+  id: string;
+  name: string;
+}
+
+let setsPromise: Promise<SetBrief[]> | null = null;
+
+/** All sets, oldest first (TCGdex lists them in release order). */
+function loadSets(): Promise<SetBrief[]> {
+  setsPromise ??= getJson<SetBrief[]>(`${API}/sets`).catch((err) => {
+    setsPromise = null;
+    throw err;
+  });
+  return setsPromise;
+}
+
+const variantsCache = new Map<number, Promise<CardVariant[]>>();
+
+/**
+ * Every physical card printed for a Pokémon (by National Pokédex number), newest set first.
+ * Includes cards like "Ash's Pikachu" or "Mewtwo & Mew GX"; skips cards without artwork.
+ */
+export function cardsForSpecies(dexId: number): Promise<CardVariant[]> {
+  let promise = variantsCache.get(dexId);
+  if (!promise) {
+    promise = (async () => {
+      const [cards, sets] = await Promise.all([
+        getJson<(CardBrief & { localId: string })[]>(`${API}/cards?dexId=eq:${dexId}&pagination:itemsPerPage=1000`),
+        loadSets().catch(() => [] as SetBrief[]),
+      ]);
+      const order = new Map(sets.map((set, i) => [set.id, i]));
+      const names = new Map(sets.map((set) => [set.id, set.name]));
+      return cards
+        .filter((c): c is CardBrief & { localId: string; image: string } => !!c.image && !c.image.includes('/tcgp/'))
+        .map((c) => {
+          // Card ids are "<set id>-<number>", e.g. "swsh4-44".
+          const setId = c.id.slice(0, -(c.localId.length + 1));
+          return { id: c.id, name: c.name, number: c.localId, image: c.image, setId, setName: names.get(setId) };
+        })
+        .sort(
+          (a, b) =>
+            (order.get(b.setId) ?? -1) - (order.get(a.setId) ?? -1) ||
+            a.number.localeCompare(b.number, undefined, { numeric: true }),
+        )
+        .map(({ setId: _setId, ...variant }) => variant);
+    })();
+    promise.catch(() => variantsCache.delete(dexId));
+    variantsCache.set(dexId, promise);
+  }
+  return promise;
 }
 
 /** Energy-type colours, used to tint the scene. */

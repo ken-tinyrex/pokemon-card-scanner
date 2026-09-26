@@ -4,7 +4,8 @@ import { type Form, loadCatalog, regularOf, shinyOf, type Species, squash } from
 import { buildSearchEntries, type SearchEntry, suggest } from './search';
 import { readCard, toCanvas, warmUpOcr } from './recognize';
 import { type AnimationState, PokemonStage } from './stage';
-import { findCard, TYPE_COLORS } from './tcgdex';
+import { CardGallery } from './gallery';
+import { type CardInfo, type CardVariant, cardImage, cardsForSpecies, findCard, TYPE_COLORS } from './tcgdex';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -13,6 +14,8 @@ const ui = {
   emptyHint: $('empty-hint'),
   info: $('info'),
   thumb: $<HTMLImageElement>('card-thumb'),
+  thumbButton: $<HTMLButtonElement>('card-thumb-button'),
+  allCards: $<HTMLButtonElement>('all-cards'),
   dex: $('dex'),
   name: $('name'),
   formName: $('form-name'),
@@ -85,8 +88,18 @@ function renderInfo(species: Species, form: Form) {
   ui.shiny.setAttribute('aria-pressed', String(form.shiny));
 }
 
+// ---------- Card details and gallery ----------
+
+const gallery = new CardGallery();
+/** The printed card matched on TCGdex, and every print of the current Pokémon. */
+let currentCard: CardInfo | null = null;
+let variants: Promise<CardVariant[]> | null = null;
+
 function resetCardDetails() {
-  ui.thumb.hidden = true;
+  currentCard = null;
+  variants = null;
+  ui.thumbButton.hidden = true;
+  ui.allCards.hidden = true;
   ui.types.replaceChildren();
   ui.cardSet.textContent = '';
   stage.setAccent(null);
@@ -129,13 +142,15 @@ async function showForm(species: Species, form: Form) {
 
 /** Fills in type, set and card art from TCGdex. Non-blocking and optional. */
 async function enrichFromTcgdex(detection: Detection) {
+  loadVariants(detection.species);
   try {
     const card = await findCard(detection);
     if (!card || current?.species !== detection.species) return;
+    currentCard = card;
     if (card.image) {
-      ui.thumb.src = card.image;
+      ui.thumb.src = cardImage(card.image, 'low');
       ui.thumb.alt = card.name;
-      ui.thumb.hidden = false;
+      ui.thumbButton.hidden = false;
     }
     ui.types.replaceChildren(
       ...card.types.map((type) => {
@@ -151,6 +166,26 @@ async function enrichFromTcgdex(detection: Detection) {
   } catch (err) {
     console.warn('TCGdex lookup failed', err);
   }
+}
+
+/** Fetches every print of the Pokémon in the background, for the "All cards" link. */
+function loadVariants(species: Species) {
+  const list = cardsForSpecies(species.id);
+  variants = list;
+  list
+    .then((cards) => {
+      if (variants !== list || cards.length === 0) return;
+      ui.allCards.textContent = `See all ${cards.length} ${species.name} cards`;
+      ui.allCards.hidden = false;
+    })
+    .catch((err) => console.warn('Loading card variants failed', err));
+}
+
+function openGallery() {
+  if (!current || !variants) return;
+  const card = currentCard;
+  const scanned = card?.image ? { id: card.id, name: card.name, number: card.number, image: card.image, setName: card.set } : undefined;
+  gallery.open(current.species.name, variants, card?.id, scanned);
 }
 
 async function onDetected(detection: Detection) {
@@ -508,7 +543,9 @@ async function main() {
     ui.file.value = '';
     if (file) scanFile(file);
   });
-  ui.thumb.addEventListener('error', () => (ui.thumb.hidden = true));
+  ui.thumb.addEventListener('error', () => (ui.thumbButton.hidden = true));
+  ui.thumbButton.addEventListener('click', openGallery);
+  ui.allCards.addEventListener('click', openGallery);
   ui.cameraCancel.addEventListener('click', closeCamera);
   ui.cameraSwitch.addEventListener('click', switchCamera);
   document.addEventListener('keydown', (e) => e.key === 'Escape' && camera.active && closeCamera());

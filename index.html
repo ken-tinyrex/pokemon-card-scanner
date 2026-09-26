@@ -19,13 +19,17 @@
       <p id="empty-hint" class="empty-hint">Scan or upload a Pokémon card<br />to bring it to life in 3D</p>
 
       <aside id="info" class="info" hidden>
-        <img id="card-thumb" class="card-thumb" alt="" hidden />
+        <button id="card-thumb-button" class="card-thumb-button" type="button" aria-label="Enlarge card" hidden>
+          <img id="card-thumb" class="card-thumb" alt="" />
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
+        </button>
         <div class="info-text">
           <p id="dex" class="dex"></p>
           <h2 id="name" class="name"></h2>
           <p id="form-name" class="form-name"></p>
           <ul id="types" class="types"></ul>
           <p id="card-set" class="card-set"></p>
+          <button id="all-cards" class="link-button" type="button" hidden></button>
         </div>
         <button id="shiny" class="chip" type="button" aria-pressed="false" hidden>Shiny</button>
       </aside>
@@ -66,6 +70,32 @@
         </form>
         <input id="file" type="file" accept="image/*" hidden />
       </div>
+
+      <dialog id="gallery" class="gallery" aria-labelledby="gallery-title">
+        <header class="gallery-header">
+          <h2 id="gallery-title"></h2>
+          <span id="gallery-count" class="gallery-count"></span>
+          <button id="gallery-close" class="gallery-close" type="button" aria-label="Close">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </header>
+        <div class="gallery-body">
+          <figure class="gallery-main">
+            <button id="gallery-prev" class="gallery-nav prev" type="button" aria-label="Previous card">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+            </button>
+            <img id="gallery-image" alt="" />
+            <button id="gallery-next" class="gallery-nav next" type="button" aria-label="Next card">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
+            </button>
+            <figcaption id="gallery-caption"></figcaption>
+          </figure>
+          <div class="gallery-list">
+            <p id="gallery-status" class="gallery-status" hidden></p>
+            <ul id="gallery-grid" class="gallery-grid" aria-label="All cards"></ul>
+          </div>
+        </div>
+      </dialog>
 
       <section id="camera" class="camera" hidden aria-label="Card scanner camera">
         <video id="camera-video" playsinline muted></video>
