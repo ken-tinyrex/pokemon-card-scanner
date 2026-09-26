@@ -5,7 +5,15 @@ import { buildSearchEntries, type SearchEntry, suggest } from './search';
 import { readCard, toCanvas, warmUpOcr } from './recognize';
 import { type AnimationState, PokemonStage } from './stage';
 import { CardGallery } from './gallery';
-import { type CardInfo, type CardVariant, cardImage, cardsForSpecies, findCard, TYPE_COLORS } from './tcgdex';
+import {
+  type CardInfo,
+  type CardVariant,
+  cardImage,
+  cardsForSpecies,
+  findCard,
+  prefetchHiresImages,
+  TYPE_COLORS,
+} from './tcgdex';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -170,6 +178,7 @@ async function enrichFromTcgdex(detection: Detection) {
 
 /** Fetches every print of the Pokémon in the background, for the "All cards" link. */
 function loadVariants(species: Species) {
+  prefetchHiresImages();
   const list = cardsForSpecies(species.id);
   variants = list;
   list
@@ -184,7 +193,17 @@ function loadVariants(species: Species) {
 function openGallery() {
   if (!current || !variants) return;
   const card = currentCard;
-  const scanned = card?.image ? { id: card.id, name: card.name, number: card.number, image: card.image, setName: card.set } : undefined;
+  const scanned = card?.image
+    ? {
+        id: card.id,
+        // Card ids are "<set id>-<number>".
+        setId: card.id.slice(0, -(card.number.length + 1)),
+        name: card.name,
+        number: card.number,
+        image: card.image,
+        setName: card.set,
+      }
+    : undefined;
   gallery.open(current.species.name, variants, card?.id, scanned);
 }
 

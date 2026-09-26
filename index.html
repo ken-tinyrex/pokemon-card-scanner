@@ -84,7 +84,13 @@
             <button id="gallery-prev" class="gallery-nav prev" type="button" aria-label="Previous card">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
             </button>
-            <img id="gallery-image" alt="" />
+            <div class="gallery-stage">
+              <div id="gallery-card" class="holo" data-foil="none">
+                <img id="gallery-image" alt="" draggable="false" />
+                <div class="holo-foil"></div>
+                <div class="holo-glare"></div>
+              </div>
+            </div>
             <button id="gallery-next" class="gallery-nav next" type="button" aria-label="Next card">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
             </button>

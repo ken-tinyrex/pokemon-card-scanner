@@ -1,9 +1,9 @@
 // Full-screen card viewer: one card enlarged, with every printed version of the Pokémon below.
 
-import { type CardVariant, cardImage } from './tcgdex';
+import { foilFor, HoloCard } from './holo';
+import { type CardVariant, cardDetails, cardImage, hiresImage } from './tcgdex';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const SWIPE_DISTANCE = 40;
 // TCGdex serves images from one server that slows down badly under many parallel requests
 // (30 at once take ~6 s), so thumbnails download a few at a time.
 const MAX_PARALLEL_THUMBNAILS = 6;
@@ -12,6 +12,17 @@ const MAX_PARALLEL_THUMBNAILS = 6;
 class ImageQueue {
   private waiting: HTMLImageElement[] = [];
   private active = 0;
+  private paused = false;
+
+  /** Holds new downloads back, e.g. while the big card loads from the same slow server. */
+  pause() {
+    this.paused = true;
+  }
+
+  resume() {
+    this.paused = false;
+    this.pump();
+  }
 
   add(img: HTMLImageElement) {
     this.waiting.push(img);
@@ -23,7 +34,7 @@ class ImageQueue {
   }
 
   private pump() {
-    while (this.active < MAX_PARALLEL_THUMBNAILS && this.waiting.length > 0) {
+    while (!this.paused && this.active < MAX_PARALLEL_THUMBNAILS && this.waiting.length > 0) {
       const img = this.waiting.shift()!;
       this.active++;
       const done = () => {
@@ -51,6 +62,7 @@ export class CardGallery {
   private index = -1;
   private openToken = 0;
   private thumbnails = new ImageQueue();
+  private holo = new HoloCard($('gallery-card'));
   // Only thumbnails on screen (or about to be) are downloaded.
   private visibility = new IntersectionObserver(
     (entries) => {
@@ -73,18 +85,7 @@ export class CardGallery {
     });
     this.prev.addEventListener('click', () => this.step(-1));
     this.next.addEventListener('click', () => this.step(1));
-
-    // Swipe the big card sideways on touch screens.
-    const main = this.image.parentElement!;
-    let start: { x: number; y: number } | null = null;
-    main.addEventListener('pointerdown', (e) => (start = { x: e.clientX, y: e.clientY }));
-    main.addEventListener('pointerup', (e) => {
-      if (!start) return;
-      const dx = e.clientX - start.x;
-      const dy = e.clientY - start.y;
-      start = null;
-      if (Math.abs(dx) > SWIPE_DISTANCE && Math.abs(dx) > Math.abs(dy)) this.step(dx < 0 ? 1 : -1);
-    });
+    this.dialog.addEventListener('close', () => this.holo.stop());
   }
 
   /**
@@ -104,6 +105,7 @@ export class CardGallery {
     else this.showImage(null);
     this.setStatus('Loading cards…');
     if (!this.dialog.open) this.dialog.showModal();
+    this.holo.start();
 
     try {
       const list = await cards;
@@ -138,6 +140,7 @@ export class CardGallery {
         fallback.textContent = card.name;
         const button = document.createElement('button');
         button.type = 'button';
+        button.dataset.cardId = card.id;
         button.title = [card.name, card.setName].filter(Boolean).join(' · ');
         button.setAttribute('aria-label', button.title);
         button.append(img, fallback);
@@ -165,34 +168,50 @@ export class CardGallery {
     this.grid.children[index]?.scrollIntoView({ block: 'nearest' });
   }
 
-  /** Shows the small image at once (usually cached), then swaps in the sharp one. */
+  /**
+   * Shows the small image at once (usually cached), then sharper ones as they arrive:
+   * TCGdex's 600px image, then the 734px pokemontcg.io scan if there is one. Never waits
+   * on a slower source before showing a faster one. The foil follows once the rarity is known.
+   */
   private showImage(card: CardVariant | null) {
     this.caption.replaceChildren();
     if (!card) {
       this.image.removeAttribute('src');
       this.image.alt = '';
+      this.image.parentElement!.classList.remove('has-image');
       return;
     }
     // Dim the previous card until the new one arrives, so the picture never mismatches the caption.
     const isCurrent = () => this.cards[this.index] === card;
     this.image.classList.add('loading');
     this.image.alt = card.name;
-    const small = new Image();
-    small.fetchPriority = 'high';
-    small.onload = () => {
-      if (!isCurrent() || this.image.src === sharp.src) return;
-      this.image.src = small.src;
-      this.image.classList.remove('loading');
+    this.holo.setFoil('none', card.image);
+
+    // Thumbnails share TCGdex's slow server, so they wait until this card has a picture.
+    this.thumbnails.pause();
+    const resumeThumbnails = setTimeout(() => this.thumbnails.resume(), 4000);
+    let shownQuality = -1;
+    const load = (url: string, quality: number) => {
+      const img = new Image();
+      img.fetchPriority = 'high';
+      img.onload = () => {
+        if (!isCurrent() || quality <= shownQuality) return;
+        shownQuality = quality;
+        this.image.src = url;
+        this.image.classList.remove('loading');
+        this.image.parentElement!.classList.add('has-image');
+        clearTimeout(resumeThumbnails);
+        this.thumbnails.resume();
+      };
+      img.src = url;
     };
-    const sharp = new Image();
-    sharp.fetchPriority = 'high';
-    sharp.onload = () => {
-      if (!isCurrent()) return;
-      this.image.src = sharp.src;
-      this.image.classList.remove('loading');
-    };
-    small.src = cardImage(card.image, 'low');
-    sharp.src = cardImage(card.image, 'high');
+    load(cardImage(card.image, 'low'), 0);
+    load(cardImage(card.image, 'high'), 1);
+    hiresImage(card).then((url) => url && isCurrent() && load(url, 2));
+
+    cardDetails(card.id)
+      .then(({ rarity, holo }) => isCurrent() && this.holo.setFoil(foilFor(rarity, holo), card.image))
+      .catch(() => {});
 
     const name = document.createElement('strong');
     name.textContent = card.name;

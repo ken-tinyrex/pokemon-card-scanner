@@ -113,6 +113,7 @@ export async function findCard(detection: Detection): Promise<CardInfo | null> {
 
 export interface CardVariant {
   id: string;
+  setId: string;
   name: string;
   /** Number within its set, as printed ("4", "SV107", "TG05"). */
   number: string;
@@ -163,8 +164,7 @@ export function cardsForSpecies(dexId: number): Promise<CardVariant[]> {
           (a, b) =>
             (order.get(b.setId) ?? -1) - (order.get(a.setId) ?? -1) ||
             a.number.localeCompare(b.number, undefined, { numeric: true }),
-        )
-        .map(({ setId: _setId, ...variant }) => variant);
+        );
     })();
     promise.catch(() => variantsCache.delete(dexId));
     variantsCache.set(dexId, promise);
@@ -186,3 +186,103 @@ export const TYPE_COLORS: Record<string, number> = {
   Dragon: 0xc9a227,
   Colorless: 0xd9d6cf,
 };
+
+// ---------- Card details and high-resolution images ----------
+
+export interface CardDetails {
+  rarity?: string;
+  /** Printed with holographic foil (some holos only say "Rare", e.g. Base Set Charizard). */
+  holo: boolean;
+}
+
+const detailsCache = new Map<string, Promise<CardDetails>>();
+
+export function cardDetails(id: string): Promise<CardDetails> {
+  let promise = detailsCache.get(id);
+  if (!promise) {
+    promise = getJson<{ rarity?: string; variants?: { holo?: boolean; normal?: boolean } }>(
+      `${API}/cards/${encodeURIComponent(id)}`,
+    ).then((card) => ({ rarity: card.rarity, holo: !!card.variants?.holo && !card.variants?.normal }));
+    promise.catch(() => detailsCache.delete(id));
+    detailsCache.set(id, promise);
+  }
+  return promise;
+}
+
+// pokemontcg.io hosts sharper scans (734×1024) than TCGdex (600×825). Its sets use different
+// ids ("sv3pt5" for TCGdex "sv03.5"), so they are matched by name once and cached.
+const PTCG_SETS_URL = 'https://api.pokemontcg.io/v2/sets?select=id,name&pageSize=250';
+const PTCG_IMAGES = 'https://images.pokemontcg.io';
+const PTCG_CACHE_KEY = 'ptcg-sets-v1';
+const PTCG_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+const squashName = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+async function fetchPtcgSets(): Promise<{ id: string; name: string }[]> {
+  try {
+    const cached = JSON.parse(localStorage.getItem(PTCG_CACHE_KEY) ?? 'null');
+    if (cached && Date.now() - cached.savedAt < PTCG_CACHE_TTL_MS) return cached.sets;
+  } catch {
+    // No usable cache.
+  }
+  // Their API fails intermittently, so retry once.
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(PTCG_SETS_URL, { signal: AbortSignal.timeout(15_000) });
+      if (!res.ok) throw new Error(`pokemontcg.io responded ${res.status}`);
+      const sets = (await res.json()).data as { id: string; name: string }[];
+      try {
+        localStorage.setItem(PTCG_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), sets }));
+      } catch {
+        // Not cached; fetched again next visit.
+      }
+      return sets;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError;
+}
+
+let ptcgSetMap: Promise<Map<string, string>> | null = null;
+
+/** TCGdex set id → pokemontcg.io set id, matched by id or by set name. */
+function loadPtcgSetMap(): Promise<Map<string, string>> {
+  ptcgSetMap ??= Promise.all([fetchPtcgSets(), loadSets()])
+    .then(([ptcg, tcgdex]) => {
+      const ids = new Set(ptcg.map((s) => s.id));
+      const byName = new Map(ptcg.map((s) => [squashName(s.name), s.id]));
+      const map = new Map<string, string>();
+      for (const set of tcgdex) {
+        const id = ids.has(set.id) ? set.id : byName.get(squashName(set.name));
+        if (id) map.set(set.id, id);
+      }
+      return map;
+    })
+    .catch((err) => {
+      ptcgSetMap = null;
+      throw err;
+    });
+  return ptcgSetMap;
+}
+
+/** Starts loading the pokemontcg.io set list early, so sharp scans are ready when needed. */
+export function prefetchHiresImages() {
+  loadPtcgSetMap().catch(() => {});
+}
+
+/**
+ * The pokemontcg.io scan (734×1024) for a card, or null if its set isn't known there.
+ * The newest sets may not be uploaded yet, so callers should treat load errors as "none".
+ */
+export async function hiresImage(card: Pick<CardVariant, 'setId' | 'number'>): Promise<string | null> {
+  try {
+    const ptcgSet = (await loadPtcgSetMap()).get(card.setId);
+    if (!ptcgSet) return null;
+    const number = card.number.replace(/^0+(?=\w)/, ''); // "006" → "6"
+    return `${PTCG_IMAGES}/${ptcgSet}/${number}_hires.png`;
+  } catch {
+    return null;
+  }
+}
