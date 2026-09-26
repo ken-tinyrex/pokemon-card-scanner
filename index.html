@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a0f1f" />
+    <title>Pokémon Card Scanner</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23fff' stroke='%23222' stroke-width='2'/%3E%3Cpath d='M2 16a14 14 0 0 1 28 0z' fill='%23e3350d' stroke='%23222' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='4.5' fill='%23fff' stroke='%23222' stroke-width='2'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main id="app">
+      <div id="stage" class="stage"></div>
+
+      <header class="topbar">
+        <h1>Card Scanner</h1>
+      </header>
+
+      <p id="empty-hint" class="empty-hint">Scan or upload a Pokémon card<br />to bring it to life in 3D</p>
+
+      <aside id="info" class="info" hidden>
+        <img id="card-thumb" class="card-thumb" alt="" hidden />
+        <div class="info-text">
+          <p id="dex" class="dex"></p>
+          <h2 id="name" class="name"></h2>
+          <p id="form-name" class="form-name"></p>
+          <ul id="types" class="types"></ul>
+          <p id="card-set" class="card-set"></p>
+        </div>
+        <button id="shiny" class="chip" type="button" aria-pressed="false" hidden>Shiny</button>
+      </aside>
+
+      <div class="dock">
+        <div id="anims" class="anims" hidden>
+          <button id="anim-all" class="chip anim-all" type="button" aria-pressed="false">Play all</button>
+          <div id="anim-list" class="anim-list" role="group" aria-label="Animations"></div>
+        </div>
+        <div id="progress" class="progress" hidden><div class="progress-bar"></div></div>
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+        <div class="actions">
+          <button id="scan" class="btn btn-primary" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M7 12h10" /></svg>
+            Scan
+          </button>
+          <button id="upload" class="btn" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" /></svg>
+            Upload
+          </button>
+        </div>
+        <form id="search" class="search" autocomplete="off">
+          <input id="search-input" list="pokemon-names" type="search" placeholder="Wrong Pokémon? Type a name" aria-label="Search Pokémon by name" />
+          <datalist id="pokemon-names"></datalist>
+        </form>
+        <input id="file" type="file" accept="image/*" hidden />
+      </div>
+
+      <section id="camera" class="camera" hidden aria-label="Card scanner camera">
+        <video id="camera-video" playsinline muted></video>
+        <div class="camera-shade">
+          <div id="camera-guide" class="camera-guide">
+            <div class="title-band"><span>Card name here</span></div>
+            <div class="scanline"></div>
+          </div>
+        </div>
+        <p id="camera-status" class="camera-status">Starting camera…</p>
+        <div class="camera-controls">
+          <button id="camera-cancel" class="btn" type="button">Cancel</button>
+          <button id="camera-switch" class="btn" type="button" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-3l-2-3H9L7 7H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1ZM9 14a3 3 0 0 0 5 2M15 12a3 3 0 0 0-5-2M14 16l.5-2M10 10l-.5 2" /></svg>
+            <span id="camera-switch-label">Front camera</span>
+          </button>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
