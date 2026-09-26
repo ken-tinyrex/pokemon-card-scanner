@@ -7,6 +7,8 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 // TCGdex serves images from one server that slows down badly under many parallel requests
 // (30 at once take ~6 s), so thumbnails download a few at a time.
 const MAX_PARALLEL_THUMBNAILS = 6;
+// A press that moves further than this is a tilt, not a tap.
+const TAP_SLOP_PX = 8;
 
 /** Downloads queued images a few at a time, in the order they were queued. */
 class ImageQueue {
@@ -58,6 +60,7 @@ export class CardGallery {
   private status = $('gallery-status');
   private prev = $<HTMLButtonElement>('gallery-prev');
   private next = $<HTMLButtonElement>('gallery-next');
+  private focusButton = $<HTMLButtonElement>('gallery-focus');
   private cards: CardVariant[] = [];
   private index = -1;
   private openToken = 0;
@@ -79,13 +82,57 @@ export class CardGallery {
     $('gallery-close').addEventListener('click', () => this.dialog.close());
     // A click on the dialog element itself is a click on the backdrop around it.
     this.dialog.addEventListener('click', (e) => e.target === this.dialog && this.dialog.close());
-    this.dialog.addEventListener('keydown', (e) => {
+    // Listen on the document: in focus mode the focused element (the close button) is hidden,
+    // so key presses no longer arrive through the dialog.
+    document.addEventListener('keydown', (e) => {
+      if (!this.dialog.open) return;
       if (e.key === 'ArrowLeft') this.step(-1);
       if (e.key === 'ArrowRight') this.step(1);
     });
     this.prev.addEventListener('click', () => this.step(-1));
     this.next.addEventListener('click', () => this.step(1));
-    this.dialog.addEventListener('close', () => this.holo.stop());
+    this.dialog.addEventListener('close', () => {
+      this.holo.stop();
+      this.setFocused(false);
+    });
+    this.setupFocus();
+  }
+
+  /**
+   * Focus mode: the card alone, as large as the screen allows. Toggled by tapping the card
+   * (a drag only tilts it) or the corner button; Esc or tapping around the card leaves it.
+   */
+  private setupFocus() {
+    const card = $('gallery-card');
+    let down: { x: number; y: number } | null = null;
+    card.addEventListener('pointerdown', (e) => (down = { x: e.clientX, y: e.clientY }));
+    card.addEventListener('pointerup', (e) => {
+      if (!down) return;
+      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+      down = null;
+      if (moved <= TAP_SLOP_PX) this.setFocused(!this.focused);
+    });
+    this.focusButton.addEventListener('click', () => this.setFocused(!this.focused));
+    // Tapping the empty space around the focused card leaves focus.
+    card.parentElement!.addEventListener('click', (e) => {
+      if (this.focused && e.target === e.currentTarget) this.setFocused(false);
+    });
+    // Esc leaves focus first instead of closing the whole gallery.
+    this.dialog.addEventListener('cancel', (e) => {
+      if (!this.focused) return;
+      e.preventDefault();
+      this.setFocused(false);
+    });
+  }
+
+  private get focused(): boolean {
+    return this.dialog.classList.contains('focused');
+  }
+
+  private setFocused(on: boolean) {
+    this.dialog.classList.toggle('focused', on);
+    this.focusButton.setAttribute('aria-pressed', String(on));
+    this.focusButton.setAttribute('aria-label', on ? 'Exit focus' : 'Focus card');
   }
 
   /**
