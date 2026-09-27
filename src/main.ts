@@ -4,16 +4,16 @@ import { type Form, loadCatalog, regularOf, shinyOf, type Species, squash } from
 import { buildSearchEntries, type SearchEntry, suggest } from './search';
 import { readCard, toCanvas, warmUpOcr } from './recognize';
 import { type AnimationState, PokemonStage } from './stage';
+import { playCry, setSoundEnabled, soundEnabled, unlockAudio } from './cry';
 import { CardGallery } from './gallery';
 import {
   type CardInfo,
   type CardVariant,
-  cardImage,
   cardsForSpecies,
   findCard,
   prefetchHiresImages,
   TYPE_COLORS,
-} from './tcgdex';
+} from './cards';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -30,6 +30,8 @@ const ui = {
   types: $('types'),
   cardSet: $('card-set'),
   shiny: $<HTMLButtonElement>('shiny'),
+  cry: $<HTMLButtonElement>('cry'),
+  soundToggle: $<HTMLButtonElement>('sound-toggle'),
   progress: $('progress'),
   status: $('status'),
   scan: $<HTMLButtonElement>('scan'),
@@ -99,7 +101,7 @@ function renderInfo(species: Species, form: Form) {
 // ---------- Card details and gallery ----------
 
 const gallery = new CardGallery();
-/** The printed card matched on TCGdex, and every print of the current Pokémon. */
+/** The printed card matched to the scan, and every print of the current Pokémon. */
 let currentCard: CardInfo | null = null;
 let variants: Promise<CardVariant[]> | null = null;
 
@@ -116,6 +118,16 @@ function resetCardDetails() {
 const CONTROLS_HINT = matchMedia('(pointer: coarse)').matches
   ? 'Drag to rotate, pinch to zoom'
   : 'Drag to rotate, scroll to zoom';
+
+function playSpeciesCry(species: Species) {
+  playCry(species.id).catch((err) => console.warn(`Couldn't play the cry for ${species.name}`, err));
+}
+
+function renderSoundToggle() {
+  const on = soundEnabled();
+  ui.soundToggle.setAttribute('aria-pressed', String(on));
+  ui.soundToggle.title = on ? 'Cries play automatically (tap to mute)' : 'Cries are muted (tap to turn on)';
+}
 
 /** The model to display: the form itself, or the species' default when that form has no model yet. */
 function modelFor(species: Species, form: Form): Form | null {
@@ -139,7 +151,10 @@ async function showForm(species: Species, form: Form) {
   setStatus(`${note}Summoning ${model.name}…`);
   try {
     await stage.show(model.model, { species: species.name, onProgress: (f) => setProgress(f) });
-    if (current?.form === form) setStatus(`${note}${CONTROLS_HINT}`);
+    if (current?.form === form) {
+      setStatus(`${note}${CONTROLS_HINT}`);
+      if (soundEnabled()) playSpeciesCry(species);
+    }
   } catch (err) {
     console.error(err);
     if (current?.form === form) setStatus(`Couldn't load the 3D model for ${model.name}.`, true);
@@ -148,18 +163,16 @@ async function showForm(species: Species, form: Form) {
   }
 }
 
-/** Fills in type, set and card art from TCGdex. Non-blocking and optional. */
-async function enrichFromTcgdex(detection: Detection) {
+/** Fills in type, set and card art for the printed card. Non-blocking and optional. */
+async function enrichCardDetails(detection: Detection) {
   loadVariants(detection.species);
   try {
     const card = await findCard(detection);
     if (!card || current?.species !== detection.species) return;
     currentCard = card;
-    if (card.image) {
-      ui.thumb.src = cardImage(card.image, 'low');
-      ui.thumb.alt = card.name;
-      ui.thumbButton.hidden = false;
-    }
+    ui.thumb.src = card.images.small;
+    ui.thumb.alt = card.name;
+    ui.thumbButton.hidden = false;
     ui.types.replaceChildren(
       ...card.types.map((type) => {
         const li = document.createElement('li');
@@ -169,10 +182,10 @@ async function enrichFromTcgdex(detection: Detection) {
       }),
     );
     const cardName = card.name !== detection.species.name ? card.name : null;
-    ui.cardSet.textContent = [cardName, card.set].filter(Boolean).join(' · ');
+    ui.cardSet.textContent = [cardName, card.setName].filter(Boolean).join(' · ');
     stage.setAccent(TYPE_COLORS[card.types[0]] ?? null);
   } catch (err) {
-    console.warn('TCGdex lookup failed', err);
+    console.warn('Card lookup failed', err);
   }
 }
 
@@ -192,24 +205,12 @@ function loadVariants(species: Species) {
 
 function openGallery() {
   if (!current || !variants) return;
-  const card = currentCard;
-  const scanned = card?.image
-    ? {
-        id: card.id,
-        // Card ids are "<set id>-<number>".
-        setId: card.id.slice(0, -(card.number.length + 1)),
-        name: card.name,
-        number: card.number,
-        image: card.image,
-        setName: card.set,
-      }
-    : undefined;
-  gallery.open(current.species.name, variants, card?.id, scanned);
+  gallery.open(current.species.name, variants, currentCard?.id, currentCard ?? undefined);
 }
 
 async function onDetected(detection: Detection) {
   resetCardDetails();
-  enrichFromTcgdex(detection);
+  enrichCardDetails(detection);
   await showForm(detection.species, detection.form);
 }
 
@@ -493,7 +494,7 @@ function choose(entry: SearchEntry) {
   closeSuggestions();
   ui.searchInput.blur(); // Also dismisses the phone keyboard.
   resetCardDetails();
-  enrichFromTcgdex({ species: entry.species, form: entry.form, title: entry.label, context: '', distance: 0, score: 0 });
+  enrichCardDetails({ species: entry.species, form: entry.form, title: entry.label, context: '', distance: 0, score: 0 });
   showForm(entry.species, entry.form);
 }
 
@@ -563,6 +564,16 @@ async function main() {
     if (file) scanFile(file);
   });
   ui.thumb.addEventListener('error', () => (ui.thumbButton.hidden = true));
+  // Browsers only allow sound after a user gesture; any tap or key press unlocks it.
+  document.addEventListener('pointerdown', unlockAudio, true);
+  document.addEventListener('keydown', unlockAudio, true);
+  ui.cry.addEventListener('click', () => current && playSpeciesCry(current.species));
+  ui.soundToggle.addEventListener('click', () => {
+    setSoundEnabled(!soundEnabled());
+    renderSoundToggle();
+    if (soundEnabled() && current) playSpeciesCry(current.species);
+  });
+  renderSoundToggle();
   ui.thumbButton.addEventListener('click', openGallery);
   ui.allCards.addEventListener('click', openGallery);
   ui.cameraCancel.addEventListener('click', closeCamera);

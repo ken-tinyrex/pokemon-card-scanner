@@ -10,11 +10,12 @@
 export type Foil = 'none' | 'holo' | 'full' | 'gold';
 
 const GOLD = /hyper|crown|gold|mega hyper/i;
+// Rarity names from TCGdex and pokemontcg.io ("Rare Holo VMAX", "Holo Rare VMAX", "Rare Rainbow"…).
 const FULL_CARD =
-  /ultra|secret|double|illustration|full art|shiny|amazing|radiant|ace spec|holo rare v|rare holo (ex|gx|v)|vmax|vstar|legend|prime|lv\.x|black white|futuristic|pikachu rare/i;
+  /ultra|secret|double|illustration|full art|shiny|amazing|radiant|\bace\b|holo rare v|rare holo (ex|gx|v)|vmax|vstar|legend|prime|lv\.x|black white|futuristic|pikachu rare|rainbow|break|trainer gallery/i;
 const HOLO = /holo/i;
 
-/** Which foil a card has, from its TCGdex rarity and whether it's printed holo. */
+/** Which foil a card has, from its rarity and whether it's printed holo. */
 export function foilFor(rarity: string | undefined, holoPrint = false): Foil {
   const r = rarity ?? '';
   if (GOLD.test(r)) return 'gold';
@@ -33,16 +34,16 @@ export interface Box {
 
 const ART_WINDOWS: [RegExp, Box][] = [
   // Scarlet & Violet and Mega Evolution: wide art window.
-  [/\/(sv|me)\//, { top: 10.5, right: 6.5, bottom: 44, left: 6.5 }],
-  [/\/swsh\//, { top: 11, right: 8, bottom: 46.5, left: 8 }],
-  [/\/(sm|xy|bw)\//, { top: 11, right: 8.5, bottom: 49.5, left: 8.5 }],
-  [/\/(base|gym|neo|lc|ecard|ex|pop|dp|pl|hgss|col)\//, { top: 10.5, right: 9, bottom: 52, left: 9 }],
+  [/^(sv|me)$/, { top: 10.5, right: 6.5, bottom: 44, left: 6.5 }],
+  [/^swsh$/, { top: 11, right: 8, bottom: 46.5, left: 8 }],
+  [/^(sm|xy|bw)$/, { top: 11, right: 8.5, bottom: 49.5, left: 8.5 }],
+  [/^(base|gym|neo|lc|ecard|ex|pop|dp|pl|hgss|col)$/, { top: 10.5, right: 9, bottom: 52, left: 9 }],
 ];
 const DEFAULT_ART_WINDOW: Box = { top: 11, right: 8, bottom: 48, left: 8 };
 
-/** The artwork window for a TCGdex image URL ("…/en/swsh/swsh4/44"), based on its series. */
-export function artWindow(imageUrl: string): Box {
-  return ART_WINDOWS.find(([series]) => series.test(imageUrl))?.[1] ?? DEFAULT_ART_WINDOW;
+/** The artwork window for a card era ("base", "swsh", "sv", …). */
+export function artWindow(series: string): Box {
+  return ART_WINDOWS.find(([pattern]) => pattern.test(series))?.[1] ?? DEFAULT_ART_WINDOW;
 }
 
 const MAX_TILT_DEG = 14;
@@ -78,9 +79,9 @@ export class HoloCard {
     card.addEventListener('pointerleave', (e) => e.pointerType === 'mouse' && release());
   }
 
-  setFoil(foil: Foil, imageUrl: string) {
+  setFoil(foil: Foil, series: string) {
     this.card.dataset.foil = foil;
-    const art = artWindow(imageUrl);
+    const art = artWindow(series);
     this.card.style.setProperty('--art', `inset(${art.top}% ${art.right}% ${art.bottom}% ${art.left}% round 1.5%)`);
   }
 

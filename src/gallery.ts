@@ -1,7 +1,7 @@
 // Full-screen card viewer: one card enlarged, with every printed version of the Pokémon below.
 
 import { foilFor, HoloCard } from './holo';
-import { type CardVariant, cardDetails, cardImage, hiresImage } from './tcgdex';
+import { type CardVariant, cardDetails, hiresImage } from './cards';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 // TCGdex serves images from one server that slows down badly under many parallel requests
@@ -180,7 +180,7 @@ export class CardGallery {
         const img = document.createElement('img');
         img.addEventListener('load', () => button.classList.add('loaded'));
         img.addEventListener('error', () => button.classList.add('failed'));
-        img.dataset.src = cardImage(card.image, 'low');
+        img.dataset.src = card.images.small;
         img.alt = '';
         img.decoding = 'async';
         const fallback = document.createElement('span');
@@ -217,7 +217,7 @@ export class CardGallery {
 
   /**
    * Shows the small image at once (usually cached), then sharper ones as they arrive:
-   * TCGdex's 600px image, then the 734px pokemontcg.io scan if there is one. Never waits
+   * the 600–734px image, then the 734px pokemontcg.io scan if there is a sharper one. Never waits
    * on a slower source before showing a faster one. The foil follows once the rarity is known.
    */
   private showImage(card: CardVariant | null) {
@@ -232,7 +232,7 @@ export class CardGallery {
     const isCurrent = () => this.cards[this.index] === card;
     this.image.classList.add('loading');
     this.image.alt = card.name;
-    this.holo.setFoil('none', card.image);
+    this.holo.setFoil('none', card.series);
 
     // Thumbnails share TCGdex's slow server, so they wait until this card has a picture.
     this.thumbnails.pause();
@@ -252,12 +252,12 @@ export class CardGallery {
       };
       img.src = url;
     };
-    load(cardImage(card.image, 'low'), 0);
-    load(cardImage(card.image, 'high'), 1);
+    load(card.images.small, 0);
+    load(card.images.large, 1);
     hiresImage(card).then((url) => url && isCurrent() && load(url, 2));
 
-    cardDetails(card.id)
-      .then(({ rarity, holo }) => isCurrent() && this.holo.setFoil(foilFor(rarity, holo), card.image))
+    cardDetails(card)
+      .then(({ rarity, holo }) => isCurrent() && this.holo.setFoil(foilFor(rarity, holo), card.series))
       .catch(() => {});
 
     const name = document.createElement('strong');

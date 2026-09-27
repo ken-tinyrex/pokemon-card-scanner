@@ -20,6 +20,10 @@
       <header class="topbar">
         <h1>Card Scanner</h1>
         <p class="signature">by ken ni vavi</p>
+        <button id="sound-toggle" class="sound-toggle" type="button" aria-pressed="true" aria-label="Play cries automatically">
+          <svg class="icon-sound-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" /></svg>
+          <svg class="icon-sound-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4V5z" /><path d="M16 9l6 6M22 9l-6 6" /></svg>
+        </button>
       </header>
 
       <p id="empty-hint" class="empty-hint">Scan or upload a Pokémon card<br />to bring it to life in 3D</p>
@@ -37,7 +41,13 @@
           <p id="card-set" class="card-set"></p>
           <button id="all-cards" class="link-button" type="button" hidden></button>
         </div>
-        <button id="shiny" class="chip" type="button" aria-pressed="false" hidden>Shiny</button>
+        <div class="info-actions">
+          <button id="cry" class="chip chip-icon" type="button" aria-label="Play cry">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" /></svg>
+            Cry
+          </button>
+          <button id="shiny" class="chip" type="button" aria-pressed="false" hidden>Shiny</button>
+        </div>
       </aside>
 
       <div class="dock">

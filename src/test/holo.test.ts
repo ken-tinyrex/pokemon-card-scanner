@@ -22,6 +22,13 @@ describe('foilFor', () => {
     ['Hyper rare', true, 'gold'],
     ['Mega Hyper Rare', true, 'gold'],
     ['Crown', true, 'gold'],
+    // pokemontcg.io names
+    ['Rare Holo VMAX', true, 'full'],
+    ['Rare Rainbow', false, 'full'],
+    ['Rare BREAK', false, 'full'],
+    ['Trainer Gallery Rare Holo', false, 'full'],
+    ['Rare ACE', false, 'full'],
+    ['Hyper Rare', false, 'gold'],
     [undefined, false, 'none'],
   ] as const)('%s (holo print: %s) → %s', (rarity, holo, foil) => {
     expect(foilFor(rarity, holo)).toBe(foil);
@@ -30,8 +37,9 @@ describe('foilFor', () => {
 
 describe('artWindow', () => {
   it('picks the art window by card era', () => {
-    expect(artWindow('https://assets.tcgdex.net/en/base/base1/4').bottom).toBe(52);
-    expect(artWindow('https://assets.tcgdex.net/en/swsh/swsh4/44').bottom).toBe(46.5);
-    expect(artWindow('https://assets.tcgdex.net/en/sv/sv03.5/006').bottom).toBe(44);
+    expect(artWindow('base').bottom).toBe(52);
+    expect(artWindow('swsh').bottom).toBe(46.5);
+    expect(artWindow('sv').bottom).toBe(44);
+    expect(artWindow('').bottom).toBe(48);
   });
 });
